@@ -1,0 +1,220 @@
+import flet as ft
+import random
+import pygame
+import json
+import os
+
+# Initialiser Pygame
+pygame.mixer.init()
+
+# Dictionnaire des lettres et leurs sons correspondants
+sons = {
+    "a": "sounds/a.mp3",
+    "i": "sounds/i.mp3",
+    "m": "sounds/m.mp3",
+    "n": "sounds/n.mp3",
+    "e": "sounds/e.mp3",
+    "é": "sounds/er.mp3",
+    "d": "sounds/d.mp3",
+    "t": "sounds/t.mp3",
+    "incorrect": "sounds/incorrect.mp3"  # Son pour une réponse incorrecte
+}
+
+# Liste des lettres par niveau
+lettres_niveaux = [
+    ["a", "i", "m", "n"],
+    ["e", "é", "d", "t"]
+]
+
+# Fichier pour sauvegarder le niveau atteint
+niveau_file = "niveau.json"
+
+# Fonction pour choisir les lettres aléatoires d'un niveau donné
+def choisir_lettres(niveau):
+    if niveau < len(lettres_niveaux):
+        return random.sample(lettres_niveaux[niveau], len(lettres_niveaux[niveau]))
+    return []  # Retourner une liste vide si le niveau est invalide
+
+# Fonction pour jouer le son correspondant
+def jouer_son(lettre):
+    if lettre in sons:
+        son = sons[lettre]
+        try:
+            pygame.mixer.music.load(son)
+            pygame.mixer.music.play()
+        except pygame.error as e:
+            print(f"Erreur de lecture du son: {e}")
+
+# Fonction pour arrêter le son
+def arreter_son():
+    pygame.mixer.music.stop()
+
+# Fonction pour charger le niveau sauvegardé
+def charger_niveau():
+    if os.path.exists(niveau_file):
+        with open(niveau_file, 'r') as f:
+            return json.load(f).get("niveau", 0)
+    return 0
+
+# Fonction pour sauvegarder le niveau atteint
+def sauvegarder_niveau(niveau):
+    with open(niveau_file, 'w') as f:
+        json.dump({"niveau": niveau}, f)
+
+# Fonction principale de l'application
+def main(page: ft.Page):
+    page.title = "Application de Discrimination Audiovisuelle"
+    
+    # Charger le niveau sauvegardé
+    niveau = charger_niveau()
+    score = 0
+    lettre_choisie = ""
+
+    # Affichage du score
+    score_text = ft.Text(f"Score: {score}", size=20)
+    page.add(score_text)
+
+    def afficher_niveau():
+        nonlocal niveau, score, lettre_choisie
+        # Choisir les lettres aléatoires pour le niveau actuel
+        lettres_choisies = choisir_lettres(niveau)
+
+        if not lettres_choisies:  # Si le niveau est invalide, afficher la fin du jeu
+            arreter_son()  # Arrêter le son
+            afficher_fin_du_jeu()
+            return
+
+        # Jouer le son de la première lettre choisie au démarrage
+        lettre_choisie = lettres_choisies[0]
+        jouer_son(lettre_choisie)
+
+        # Vider la fenêtre
+        page.controls.clear()  # Vider tous les contrôles de la page
+        page.add(score_text)  # Réafficher le score
+
+        # Créer un Stack pour positionner les boutons
+        stack = ft.Stack()
+
+        # Couleurs pour les boutons
+        couleurs = [ft.colors.RED, ft.colors.GREEN, ft.colors.BLUE, ft.colors.YELLOW]
+
+        # Positionner les boutons des lettres aléatoirement
+        positions_utilisees = []
+        for i, lettre in enumerate(lettres_choisies):
+            while True:
+                left = random.randint(0, int(page.width) - 110)  # Largeur du bouton + marge
+                top = random.randint(0, int(page.height) - 160)  # Hauteur du bouton + marge
+
+                # Vérifier la collision avec une marge de 10 pixels
+                collision = any(
+                    abs(left - p[0]) < 110 and abs(top - p[1]) < 110 for p in positions_utilisees
+                )
+                if not collision:
+                    positions_utilisees.append((left, top))
+                    break
+
+            # Créer un bouton pour chaque lettre avec feedback visuel
+            bouton_lettre = ft.ElevatedButton(
+                text=lettre, 
+                on_click=lambda e, l=lettre: verifier_reponse(l, lettre_choisie),
+                bgcolor=couleurs[i % len(couleurs)],  # Couleur différente pour chaque bouton
+                color=ft.colors.WHITE,  # Couleur du texte
+                style=ft.ButtonStyle(
+                    shape=ft.RoundedRectangleBorder(radius=10)
+                )
+            )
+
+            # Ajouter le bouton de la lettre au Stack
+            stack.controls.append(bouton_lettre)
+
+            # Positionner le bouton après l'avoir ajouté au Stack
+            bouton_lettre.left = left
+            bouton_lettre.top = top
+
+        # Créer et positionner le bouton "Réécouter"
+        bouton_reecouter = ft.ElevatedButton(
+            text="Réécouter", 
+            on_click=lambda _: jouer_son(lettre_choisie),
+            bgcolor=ft.colors.ORANGE,  # Couleur pour le bouton réécouter
+            color=ft.colors.WHITE,
+            style=ft.ButtonStyle(
+                shape=ft.RoundedRectangleBorder(radius=10)
+            )
+        )
+
+        # Positionner le bouton de réécoute
+        bouton_reecouter.left = (page.width - 120) / 2  # Centré horizontalement
+        bouton_reecouter.top = page.height - 100  # Positionné en bas
+
+        # Ajouter le bouton de réécoute au Stack
+        stack.controls.append(bouton_reecouter)
+
+        # Ajouter le Stack à la page
+        page.add(stack)
+
+        page.update()  # Mettre à jour la page après ajout des contrôles
+
+    # Fonction pour vérifier la réponse de l'utilisateur
+    def verifier_reponse(lettre, lettre_choisie):
+        nonlocal niveau, score
+        if lettre == lettre_choisie:
+            score += 1  # Incrémenter le score
+            score_text.value = f"Score: {score}"  # Mettre à jour le texte du score
+            jouer_son(lettre_choisie)  # Jouer le son de la lettre choisie
+            niveau += 1  # Passer au niveau suivant
+            
+            # Vérifier si le niveau est toujours valide après l'incrémentation
+            if niveau < len(lettres_niveaux):
+                afficher_niveau()  # Afficher le nouveau niveau
+            else:
+                # Appeler la fonction pour afficher la fin du jeu
+                afficher_fin_du_jeu()  
+        else:
+            jouer_son("incorrect")  # Jouer le son d'erreur
+            # Afficher un message de feedback
+            page.add(ft.Text("Réponse incorrecte ! Essayez encore.", color=ft.colors.RED))
+            afficher_niveau()  # Réafficher le même niveau
+
+
+    def afficher_fin_du_jeu():
+        nonlocal score
+        arreter_son()  # Arrêter le son
+        page.controls.clear()
+        page.add(ft.Text(f"Bravo ! Vous avez terminé avec un score de {score} !", size=24))
+        
+        # Créer une boîte de dialogue pour la fin du jeu
+        recommencer_btn = ft.ElevatedButton(text="Recommencer", on_click=recommencer)
+        quitter_btn = ft.ElevatedButton(text="Quitter", on_click=quitter)
+
+        # Utiliser une colonne pour organiser les boutons
+        fenetre_fin = ft.Column(
+            controls=[
+                ft.Text(f"Score final : {score}", size=20),
+                recommencer_btn,
+                quitter_btn
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10  # Ajoute de l'espace entre les contrôles
+        )
+        
+        # Ajouter la colonne à la page
+        page.add(fenetre_fin)
+        sauvegarder_niveau(niveau)  # Sauvegarder le niveau atteint
+
+    def recommencer(e):
+        nonlocal niveau, score
+        niveau = 0
+        score = 0
+        score_text.value = f"Score: {score}"  # Réinitialiser le score
+        sauvegarder_niveau(niveau)  # Réinitialiser le niveau sauvegardé
+        afficher_niveau()  # Afficher le niveau initial
+
+    def quitter(e):
+        page.window_close()  # Fermer l'application
+
+
+    # Afficher le niveau initial
+    afficher_niveau()
+
+# Exécuter l'application
+ft.app(target=main)
